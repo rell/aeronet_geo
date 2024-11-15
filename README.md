@@ -12,5 +12,5 @@ Program:<br />
    <br /> Allow multiple args (pass .nc files to be parsed and loaded)
 <br />
 Resources:<br />
-    Previous project:    https://github.com/pawanpgupta/DTAerosols/blob/main/read_viirs_at_a_location.ipynb
+    Previous project:    https://github.com/pawanpgupta/DTAerosols/blob/main/read_viirs_at_a_location.ipynb<br>
     Docu: https://unidata.github.io/netcdf4-python/
