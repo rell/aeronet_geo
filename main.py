@@ -32,14 +32,6 @@ def collect_nc4s():
     except:
         print("no files list found")
 
-
-# Grab all variable that can be called | prevents time, lat, lon etc. from being called
-def prepare_df(site_df, geods):
-    for variable in geods.variables.keys():
-        if geods.variables[variable][:].ndim >= 2:
-            site_df[variable] = None
-
-
 # Testing short list of locations for developement
 def make_df_test():
     loc = os.path.join(".", "aeronet_locations_v3_test.txt")
@@ -91,7 +83,7 @@ def getNGP(lat, lon, site_lat, site_lon):
     d = R * c
     return np.unravel_index(d.argmin(), d.shape)
 
-
+# Grab all netCDF output of all vars for a given site
 def process_site(site, ds_path, var_list, new_lat, new_lon):
     try:
         geods = Dataset(ds_path, "r")
@@ -116,20 +108,19 @@ def process_site(site, ds_path, var_list, new_lat, new_lon):
     except Exception as e:
         print(e)
 
-
+# Just update global progress bar for tracking sites
 def update_progress(n=1):
     global progress_bar
     if progress_bar is not None:
         progress_bar.update(n)
 
-
+# Build variable list for variable exclusion to prevent errors
 def get_geodslist(geods):
     list_of_vars = []
     for variable in geods.variables.keys():
         if geods.variables[variable][:].ndim >= 2:
             list_of_vars.append(variable)
     return list_of_vars
-
 
 def process(site_df, files):
     save_path = os.path.join(".", "csv")
