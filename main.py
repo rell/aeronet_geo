@@ -176,7 +176,7 @@ def process(site_df, files):
                         chunksize=10,
                     ),
                     total=site_df.shape[0],
-                    desc="Processing Sites",
+                    desc="Processing Locations",
                 )
             )
 
