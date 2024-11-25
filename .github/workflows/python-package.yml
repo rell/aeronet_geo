@@ -28,7 +28,8 @@ jobs:
 
     - name: Install dependencies with pipenv
       run: |
-        pipenv install --dev  # --dev installs both default and development dependencies (including testing & linting tools)
+        # Ensure that pipenv uses the correct Python version
+        pipenv --python ${{ matrix.python-version }} install --dev
 
     - name: Lint with flake8
       run: |
