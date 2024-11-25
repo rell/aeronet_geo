@@ -21,7 +21,7 @@ from tqdm.auto import tqdm
 progress_bar = None  # Global progress for tracking the processing of sites
 
 
-# creates an array of all NC files from a given list
+# Creates an array of all NC files from a given list
 def collect_nc4s():
     try:
         files = []
@@ -139,7 +139,7 @@ def process(site_df, files):
         save_csv = ds.split(".nc")[0] + ".csv"
         ds_path = os.path.join(".", ds)
         geods = Dataset(ds_path, "r")
-        prepare_df(site_df, geods)
+        # prepare_df(site_df, geods)
         list_of_vars = get_geodslist(geods)
 
         """
@@ -194,7 +194,9 @@ def process(site_df, files):
         ]
 
         df = pandas.DataFrame(flattened_data)
-        df.to_csv(os.path.join(save_path, save_csv), index=False)
+
+        completed_df = pandas.merge(site_df, df, on="Site_Name", how="right")
+        completed_df.to_csv(os.path.join(save_path, save_csv), index=False)
 
 
 if __name__ == "__main__":
