@@ -1,16 +1,9 @@
-Overview:<br />
-    - Parse given .nc files<br />
-    - Read and extract all params using -> dict keys()<br />
-    - using nearest grid point (Get points given a lat lng)<br />
-    - Allow multiple files to be loaded<br />
-<br />
-<br />
-Program:<br />
-    test.py #testing program implementation
-    <br />overview.ipynb #overview of implementation with walkthrough
-    <br />--
-   <br /> Allow multiple args (pass .nc files to be parsed and loaded)
-<br />
-Resources:<br />
-    Previous project:    https://github.com/pawanpgupta/DTAerosols/blob/main/read_viirs_at_a_location.ipynb<br>
-    Docu: https://unidata.github.io/netcdf4-python/
+#### AERONET Geo Processing Pipeline
+AERONET netCDF processing pipeline for all available AERONET locations. <br>
+
+Given a list of netCDF files, process the near grid point relative to a given AERONET location. <br>
+process all locations at [list](https://aeronet.gsfc.nasa.gov/aeronet_locations_v3.txt) and all netCDF files within the given filelist.txt <br>
+Output to: csv/[netCDF file].csv <br>
+
+#### Example output:
+https://github.com/rell/aeronet_site_info/blob/main/csv/XAERDT_L3_MEASURES_QD_HH.A2022365.2030.001.2024316153136.csv
