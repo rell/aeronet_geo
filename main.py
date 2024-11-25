@@ -1,22 +1,52 @@
+"""
+
+Author: Terrell Credle
+
+Generates csv data from a given list of NetCDF files for geo data for all aeronet locations.
+
+"""
+
 import json
 import os
+from functools import partial
+from multiprocessing import Pool, cpu_count
 
-# import netCDF4
 import numpy as np
+import numpy.ma as ma
 import pandas
 import requests
 from netCDF4 import Dataset
+from tqdm.auto import tqdm
 
-json_loc = os.path.join(".", "site_map.json")
-net_loc = os.path.join(
-    ".", "XAERDT_L3_MEASURES_QD_HH.A2022365.2030.001.2024316153136.nc"
-)
-
-test_loc = os.path.join(
-    ".", "XAERDT_L3_MEASURES_QD_HH.A2022365.2030.001.2024316153136.nc"
-)
+progress_bar = None  # Global progress for tracking the processing of sites
 
 
+# creates an array of all NC files from a given list
+def collect_nc4s():
+    try:
+        files = []
+        with open("filelist.txt", "r") as file:
+            files = file.readlines()
+            files = [file.strip() for file in files]
+            return files
+    except:
+        print("no files list found")
+
+
+# Grab all variable that can be called | prevents time, lat, lon etc. from being called
+def prepare_df(site_df, geods):
+    for variable in geods.variables.keys():
+        if geods.variables[variable][:].ndim >= 2:
+            site_df[variable] = None
+
+
+# Testing short list of locations for developement
+def make_df_test():
+    loc = os.path.join(".", "aeronet_locations_v3_test.txt")
+    return pandas.read_csv(loc, skiprows=1, delimiter=",")
+
+
+# Builds site_df from aeronet location list
 def make_df():
     site_list_url = "https://aeronet.gsfc.nasa.gov/aeronet_locations_v3.txt"
     need2update = False
@@ -28,6 +58,7 @@ def make_df():
         with open(loc, "r") as file:
             if file.read() == site_list:
                 need2update = False
+                print("Location list is already upto date, moving to processing.")
             else:
                 need2update = True
             file.close()
@@ -35,6 +66,7 @@ def make_df():
         need2update = True
 
     if need2update:
+        print("Updating location list\n")
         with open(loc, "w") as file:
             file.write(site_list)
         file.close()
@@ -43,18 +75,15 @@ def make_df():
 
 
 def getNGP(lat, lon, site_lat, site_lon):
-    R = 6371000  # radius of the earth in meters
+    """
+    NGP with haversine formula from pawan's repo:
+        https://github.com/pawanpgupta/DTAerosols/blob/main/read_viirs_at_a_location.ipynb
+    """
+    R = 6371000
     lat1 = np.radians(site_lat)
     lat2 = np.radians(lat)
     delta_lat = np.radians(lat - site_lat)
     delta_lon = np.radians(lon - site_lon)
-
-    # print((np.sin(delta_lat / 2)))
-    # print((np.sin(delta_lat / 2)))
-    # print((np.cos(lat1)))
-    # print((np.cos(lat2)))
-    # print((np.sin(delta_lon / 2)))
-    # print(np.sin(delta_lon / 2))
     a = (np.sin(delta_lat / 2)) * (np.sin(delta_lat / 2)) + (np.cos(lat1)) * (
         np.cos(lat2)
     ) * (np.sin(delta_lon / 2)) * (np.sin(delta_lon / 2))
@@ -63,45 +92,113 @@ def getNGP(lat, lon, site_lat, site_lon):
     return np.unravel_index(d.argmin(), d.shape)
 
 
-def process(site_df):
-    # sites = None
-    # site_df = pandas.read_csv(loc, skiprows=1, delimiter=",") if site_df is None else site_df
-    geods = Dataset(net_loc, "r")
-    # print(geods.variables.keys())
-    # var_list = [var for geods.variables.keys() if "lat" in geod]
+def process_site(site, ds_path, var_list, new_lat, new_lon):
+    try:
+        geods = Dataset(ds_path, "r")
+        index, site = site
 
-    # for variable in geods.variables.keys():
-    #     print(variable, type(geods[variable]))
-    lat = geods.variables["lat"][:][:]
-    lon = geods.variables["lon"][:][:]
+        site_lat = site["Latitude(decimal_degrees)"]
+        site_lon = site["Longitude(decimal_degrees)"]
 
-    print()
+        x, y = getNGP(new_lat, new_lon, site_lat, site_lon)
 
-    for _, site in site_df.iterrows():
+        site_data = {"Site_Name": site["Site_Name"]}
+        for variable in var_list:
+            try:
+                var_data = geods.variables[variable][:][:]
+                if var_data.ndim == 3:
+                    site_data[variable] = ma.getdata(var_data[..., x, y])
+            except Exception as e:
+                pass
+        update_progress()
+        return site_data
 
-        for variable in geods.variables.keys():
-            if "AOD" in variable:
-                # print(type(geods[variable]))
-                # print(geods[variable])
-                # #             # print(geods[variable].keys())
-                # #             # lon = geods[variable].variables["longitude"][:][:]
-                # #             # lat = geods[variable].variables["latitude"][:][:]
-                # #             # print(lat, lon)
-                site_lat = site["Latitude(decimal_degrees)"]
-                site_lon = site["Longitude(decimal_degrees)"]
-                # gets (and then prints) the x,y location of the nearest point in data to entered location, accounting for no data values
-                x, y = getNGP(lat, lon, site_lat, site_lon)
-        #
-        # # site_df.loc[site["Site_Name"], "Longitude(decimal_degrees)"] = x
-        # # site_df.loc[site["Site_Name"], "Latitude(decimal_degrees)"] = y
-        # print(x, y)
+    except Exception as e:
+        print(e)
 
 
-## NEXT Run Calculations against new lat, lngs in the data frame against netcdf
+def update_progress(n=1):
+    global progress_bar
+    if progress_bar is not None:
+        progress_bar.update(n)
 
-## SAVE for export
+
+def get_geodslist(geods):
+    list_of_vars = []
+    for variable in geods.variables.keys():
+        if geods.variables[variable][:].ndim >= 2:
+            list_of_vars.append(variable)
+    return list_of_vars
+
+
+def process(site_df, files):
+    save_path = os.path.join(".", "csv")
+    os.makedirs(save_path, exist_ok=True)
+
+    for ds in tqdm(files, desc="Processing Files"):
+        save_csv = ds.split(".nc")[0] + ".csv"
+        ds_path = os.path.join(".", ds)
+        geods = Dataset(ds_path, "r")
+        prepare_df(site_df, geods)
+        list_of_vars = get_geodslist(geods)
+
+        """
+        Give lat lon new dim based on netCDF var dim. 
+        --  Could be optimized to just do this one time
+        """
+        lat = geods.variables["lat"][:]
+        lon = geods.variables["lon"][:]
+
+        new_lat = np.zeros((720, 1440), dtype=float)
+        new_lon = np.zeros((720, 1440), dtype=float)
+
+        for i in range(0, 1440):
+            new_lat[:, i] = lat
+
+        for i in range(0, 720):
+            new_lon[i, :] = lon
+
+        process_site_partial = partial(
+            process_site,
+            ds_path=ds_path,
+            var_list=list_of_vars,
+            new_lat=new_lat,
+            new_lon=new_lon,
+        )
+
+        # Safe pool sizing to prevent crashing of server (Possible to increase to a factor of system thread count)
+        with Pool(5) as pool:
+            site_data_list = list(
+                tqdm(
+                    pool.imap_unordered(
+                        process_site_partial,
+                        site_df.iterrows(),
+                        chunksize=10,
+                    ),
+                    total=site_df.shape[0],
+                    desc="Processing Sites",
+                )
+            )
+
+        # Fixes previous issue of attempting to directly add masked array to dataframe
+        flattened_data = [
+            {
+                key: (
+                    value[0]
+                    if isinstance(value, np.ndarray) and len(value) == 1
+                    else value
+                )
+                for key, value in record.items()
+            }
+            for record in site_data_list
+        ]
+
+        df = pandas.DataFrame(flattened_data)
+        df.to_csv(os.path.join(save_path, save_csv), index=False)
 
 
 if __name__ == "__main__":
+    files = collect_nc4s()
     site_df = make_df()
-    process(site_df)
+    # site_df = make_df_test()
+    process(site_df, files)
