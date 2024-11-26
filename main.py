@@ -24,10 +24,9 @@ progress_bar = None  # Global progress for tracking the processing of sites
 # Creates an array of all NC files from a given list
 def collect_nc4s():
     try:
-        files = []
         with open("filelist.txt", "r") as file:
             files = file.readlines()
-            files = [file.strip() if len(file) > 0 for file in files] 
+            files = [file.strip() for file in files if file.strip()]
             return files
     except:
         print("no files list found")
