@@ -27,10 +27,11 @@ def collect_nc4s():
         files = []
         with open("filelist.txt", "r") as file:
             files = file.readlines()
-            files = [file.strip() for file in files]
+            files = [file.strip() if len(file) > 0 for file in files] 
             return files
     except:
         print("no files list found")
+
 
 # Testing short list of locations for developement
 def make_df_test():
@@ -83,6 +84,7 @@ def getNGP(lat, lon, site_lat, site_lon):
     d = R * c
     return np.unravel_index(d.argmin(), d.shape)
 
+
 # Grab all netCDF output of all vars for a given site
 def process_site(site, ds_path, var_list, new_lat, new_lon):
     try:
@@ -97,22 +99,33 @@ def process_site(site, ds_path, var_list, new_lat, new_lon):
         site_data = {"Site_Name": site["Site_Name"]}
         for variable in var_list:
             try:
-                var_data = geods.variables[variable][:][:]
-                if var_data.ndim == 3:
-                    site_data[variable] = ma.getdata(var_data[..., x, y])
+                # Set fill to prevent numpy from messing up fill netCDF fill value
+                data = geods.variables[variable][..., x, y]
+                ma.set_fill_value(data, -9999)
+                cleaned_data = data.filled()
+                site_data[variable] = ma.getdata(cleaned_data)
             except Exception as e:
                 pass
+
+        # Requested Columnsm to add
+        site_data["netCDF_lat"] = ma.getdata(geods.variables["lat"][site_lat]).item()
+        site_data["netCDF_lon"] = ma.getdata(geods.variables["lon"][site_lon]).item()
+        site_data["NGP_lat"] = x
+        site_data["NGP_lon"] = y
+
         update_progress()
         return site_data
 
     except Exception as e:
         print(e)
 
+
 # Just update global progress bar for tracking sites
 def update_progress(n=1):
     global progress_bar
     if progress_bar is not None:
         progress_bar.update(n)
+
 
 # Build variable list for variable exclusion to prevent errors
 def get_geodslist(geods):
@@ -121,6 +134,7 @@ def get_geodslist(geods):
         if geods.variables[variable][:].ndim >= 2:
             list_of_vars.append(variable)
     return list_of_vars
+
 
 def process(site_df, files):
     save_path = os.path.join(".", "csv")
@@ -176,7 +190,9 @@ def process(site_df, files):
             {
                 key: (
                     value[0]
-                    if isinstance(value, np.ndarray) and len(value) == 1
+                    if isinstance(value, np.ndarray)
+                    and hasattr(value, "__len__")
+                    and len(value) == 1
                     else value
                 )
                 for key, value in record.items()
