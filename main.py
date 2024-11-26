@@ -207,6 +207,6 @@ def process(site_df, files):
 
 if __name__ == "__main__":
     files = collect_nc4s()
-    # site_df = make_df()
-    site_df = make_df_test()
+    site_df = make_df()
+    # site_df = make_df_test()
     process(site_df, files)
