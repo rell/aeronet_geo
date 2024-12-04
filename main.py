@@ -89,7 +89,7 @@ def process_site(site, ds_path, var_list, new_lat, new_lon):
     try:
         geods = Dataset(ds_path, "r")
         index, site = site
-
+        #TODO: possibly need to use netcdf  lat lng instead of norm lat lng
         site_lat = site["Latitude(decimal_degrees)"]
         site_lon = site["Longitude(decimal_degrees)"]
 
