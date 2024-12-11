@@ -6,4 +6,4 @@ process all locations at [list](https://aeronet.gsfc.nasa.gov/aeronet_locations_
 Output to: csv/[netCDF file].csv <br>
 
 #### Example output:
-[Example CSV Output File](https://github.com/rell/aeronet_site_info/blob/main/csv/XAERDT_L3_MEASURES_QD_HH.A2022365.2030.001.2024316153136.csv)
+[Example CSV Output File](https://github.com/rell/aeronet_geo/blob/ba3324471dc7454f6c5592a521d3fcc558f2f2d8/csv/XAERDT_L3_MEASURES_QD_HH.A2022365.2030.001.2024316153136.csv)
