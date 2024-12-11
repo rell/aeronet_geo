@@ -19,6 +19,8 @@ from netCDF4 import Dataset
 from tqdm.auto import tqdm
 
 progress_bar = None  # Global progress for tracking the processing of sites
+AERONET_FILE_LOC = os.path.join(".", "aeronet_locations_v3.txt")
+PREPROCESS_LOC = os.path.join(".", "aeronet_locations.csv")
 
 
 # Creates an array of all NC files from a given list
@@ -34,8 +36,8 @@ def collect_nc4s():
 
 # Testing short list of locations for developement
 def make_df_test():
-    loc = os.path.join(".", "aeronet_locations_v3_test.txt")
-    return pandas.read_csv(loc, skiprows=1, delimiter=",")
+    AERONET_FILE_LOC = os.path.join(".", "aeronet_locations_v3_test.txt")
+    return pandas.read_csv(AERONET_FILE_LOC, skiprows=1, delimiter=",")
 
 
 # Builds site_df from aeronet location list
@@ -45,9 +47,8 @@ def make_df():
     site_df = None
     site_list = requests.get(site_list_url)
     site_list = site_list.text
-    loc = os.path.join(".", "aeronet_locations_v3.txt")
-    if site_list is not None and os.path.exists(loc):
-        with open(loc, "r") as file:
+    if site_list is not None and os.path.exists(AERONET_FILE_LOC):
+        with open(AERONET_FILE_LOC, "r") as file:
             if file.read() == site_list:
                 need2update = False
                 print("Location list is already upto date, moving to processing.")
@@ -59,11 +60,15 @@ def make_df():
 
     if need2update:
         print("Updating location list\n")
-        with open(loc, "w") as file:
+        with open(AERONET_FILE_LOC, "w") as file:
             file.write(site_list)
         file.close()
 
-    return pandas.read_csv(loc, skiprows=1, delimiter=",")
+    return (need2update, pandas.read_csv(AERONET_FILE_LOC, skiprows=1, delimiter=","))
+
+
+def get_updated_df():
+    return pandas.read_csv(PREPROCESS_LOC, delimiter=",")
 
 
 def getNGP(lat, lon, site_lat, site_lon):
@@ -84,8 +89,7 @@ def getNGP(lat, lon, site_lat, site_lon):
     return np.unravel_index(d.argmin(), d.shape)
 
 
-# Grab all netCDF output of all vars for a given site
-def process_site(site, ds_path, var_list, new_lat, new_lon):
+def build_aeronet_df(site, ds_path, new_lat, new_lon):
     try:
         geods = Dataset(ds_path, "r")
         index, site = site
@@ -93,24 +97,14 @@ def process_site(site, ds_path, var_list, new_lat, new_lon):
         site_lat = site["Latitude(decimal_degrees)"]
         site_lon = site["Longitude(decimal_degrees)"]
 
-        x, y = getNGP(new_lat, new_lon, site_lat, site_lon)
-
         site_data = {"Site_Name": site["Site_Name"]}
-        for variable in var_list:
-            try:
-                # Set fill to prevent numpy from messing up fill netCDF fill value
-                data = geods.variables[variable][..., x, y]
-                ma.set_fill_value(data, -9999)
-                cleaned_data = data.filled()
-                site_data[variable] = ma.getdata(cleaned_data)
-            except Exception as e:
-                pass
-
-        # Requested Columnsm to add
         site_data["netCDF_lat"] = ma.getdata(geods.variables["lat"][site_lat]).item()
         site_data["netCDF_lon"] = ma.getdata(geods.variables["lon"][site_lon]).item()
+        x, y = getNGP(new_lat, new_lon, site_lat, site_lon)
         site_data["NGP_lat"] = x
         site_data["NGP_lon"] = y
+        site_data["lat"] = site_lat
+        site_data["lon"] = site_lon
 
         update_progress()
         return site_data
@@ -135,6 +129,73 @@ def get_geodslist(geods):
     return list_of_vars
 
 
+def process_aeronet_list(file, site_df):
+    ds_path = os.path.join(".", file)
+    geods = Dataset(ds_path, "r")
+
+    # create new lat lon dims
+    lat = geods.variables["lat"][:]
+    lon = geods.variables["lon"][:]
+
+    new_lat = np.zeros((720, 1440), dtype=float)
+    new_lon = np.zeros((720, 1440), dtype=float)
+
+    for i in range(0, 1440):
+        new_lat[:, i] = lat
+
+    for i in range(0, 720):
+        new_lon[i, :] = lon
+
+    process_site_partial = partial(
+        build_aeronet_df,
+        ds_path=ds_path,
+        new_lat=new_lat,
+        new_lon=new_lon,
+    )
+
+    with Pool(7) as pool:
+        site_data_list = list(
+            tqdm(
+                pool.imap_unordered(
+                    process_site_partial,
+                    site_df.iterrows(),
+                    chunksize=50,
+                ),
+                total=site_df.shape[1],
+                desc="Processing Locations",
+            )
+        )
+
+    df = pandas.DataFrame(site_data_list)
+    df.to_csv(PREPROCESS_LOC, index=False)
+
+
+# Grab all netCDF output of all vars for a given site
+def process_site(site, ds_path, var_list):
+    try:
+        geods = Dataset(ds_path, "r")
+        index, site = site
+
+        site_data = {"Site_Name": site["Site_Name"]}
+        for variable in var_list:
+            try:
+                # Set fill to prevent numpy from messing up fill netCDF fill value
+                data = geods.variables[variable][
+                    ..., site["netCDF_lat"], site["netCDF_lon"]
+                ]
+                ma.set_fill_value(data, -9999)
+                cleaned_data = data.filled()
+                site_data[variable] = ma.getdata(cleaned_data)
+            except Exception as e:
+                pass
+
+        update_progress()
+        return site_data
+
+    except Exception as e:
+        print(e)
+
+
 def process(site_df, files):
     save_path = os.path.join(".", "csv")
     os.makedirs(save_path, exist_ok=True)
@@ -143,41 +204,22 @@ def process(site_df, files):
         save_csv = ds.split(".nc")[0] + ".csv"
         ds_path = os.path.join(".", ds)
         geods = Dataset(ds_path, "r")
-        # prepare_df(site_df, geods)
         list_of_vars = get_geodslist(geods)
-
-        """
-        Give lat lon new dim based on netCDF var dim. 
-        --  Could be optimized to just do this one time
-        """
-        lat = geods.variables["lat"][:]
-        lon = geods.variables["lon"][:]
-
-        new_lat = np.zeros((720, 1440), dtype=float)
-        new_lon = np.zeros((720, 1440), dtype=float)
-
-        for i in range(0, 1440):
-            new_lat[:, i] = lat
-
-        for i in range(0, 720):
-            new_lon[i, :] = lon
 
         process_site_partial = partial(
             process_site,
             ds_path=ds_path,
             var_list=list_of_vars,
-            new_lat=new_lat,
-            new_lon=new_lon,
         )
 
         # Safe pool sizing to prevent crashing of server (Possible to increase to a factor of system thread count)
-        with Pool(5) as pool:
+        with Pool(8) as pool:
             site_data_list = list(
                 tqdm(
                     pool.imap_unordered(
                         process_site_partial,
                         site_df.iterrows(),
-                        chunksize=10,
+                        chunksize=50,
                     ),
                     total=site_df.shape[0],
                     desc="Processing Locations",
@@ -208,5 +250,14 @@ def process(site_df, files):
 if __name__ == "__main__":
     files = collect_nc4s()
     site_df = make_df()
+    if site_df[0] or not os.path.exists(PREPROCESS_LOC):
+        print(
+            "aeronet preprocess csv is not generated or needs to be updated... generating now."
+        )
+        process_aeronet_list(files[0], site_df[1])
+    else:
+        print("aeronet preprocess csv is updated and does not need to be generated.")
+
+    site_df = get_updated_df()
     # site_df = make_df_test()
     process(site_df, files)
