@@ -93,16 +93,15 @@ def build_aeronet_df(site, ds_path, new_lat, new_lon):
     try:
         geods = Dataset(ds_path, "r")
         index, site = site
-        #TODO: possibly need to use netcdf  lat lng instead of norm lat lng
+        # TODO: possibly need to use netcdf  lat lng instead of norm lat lng
         site_lat = site["Latitude(decimal_degrees)"]
         site_lon = site["Longitude(decimal_degrees)"]
-
         site_data = {"Site_Name": site["Site_Name"]}
-        site_data["netCDF_lat"] = ma.getdata(geods.variables["lat"][site_lat]).item()
-        site_data["netCDF_lon"] = ma.getdata(geods.variables["lon"][site_lon]).item()
         x, y = getNGP(new_lat, new_lon, site_lat, site_lon)
         site_data["NGP_lat"] = x
         site_data["NGP_lon"] = y
+        site_data["netCDF_lat"] = new_lat[x, y]
+        site_data["netCDF_lon"] = new_lon[x, y]
         site_data["lat"] = site_lat
         site_data["lon"] = site_lon
 
