@@ -7,6 +7,7 @@ Generates csv data from a given list of NetCDF files for geo data for all aerone
 """
 
 import json
+import math
 import os
 from functools import partial
 from multiprocessing import Pool, cpu_count
@@ -96,6 +97,7 @@ def build_aeronet_df(site, ds_path, new_lat, new_lon):
         # TODO: possibly need to use netcdf  lat lng instead of norm lat lng
         site_lat = site["Latitude(decimal_degrees)"]
         site_lon = site["Longitude(decimal_degrees)"]
+
         site_data = {"Site_Name": site["Site_Name"]}
         x, y = getNGP(new_lat, new_lon, site_lat, site_lon)
         site_data["NGP_lat"] = x
@@ -104,6 +106,10 @@ def build_aeronet_df(site, ds_path, new_lat, new_lon):
         site_data["netCDF_lon"] = new_lon[x, y]
         site_data["lat"] = site_lat
         site_data["lon"] = site_lon
+        site_data["net_to_aero_distance"] = math.sqrt(
+            (site_data["netCDF_lat"] - site_data["lat"]) ** 2
+            + (site_data["netCDF_lon"] - site_data["lon"]) ** 2
+        )
 
         update_progress()
         return site_data
@@ -179,9 +185,7 @@ def process_site(site, ds_path, var_list):
         for variable in var_list:
             try:
                 # Set fill to prevent numpy from messing up fill netCDF fill value
-                data = geods.variables[variable][
-                    ..., site["netCDF_lat"], site["netCDF_lon"]
-                ]
+                data = geods.variables[variable][..., site["NGP_lat"], site["NGP_lon"]]
                 ma.set_fill_value(data, -9999)
                 cleaned_data = data.filled()
                 site_data[variable] = ma.getdata(cleaned_data)
@@ -258,5 +262,4 @@ if __name__ == "__main__":
         print("aeronet preprocess csv is updated and does not need to be generated.")
 
     site_df = get_updated_df()
-    # site_df = make_df_test()
     process(site_df, files)
